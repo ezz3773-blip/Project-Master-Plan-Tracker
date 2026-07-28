@@ -1,0 +1,186 @@
+/* =====================================================================
+   DERIVED SHEETS — NOT stored directly. Each is generated live from
+   Part Master (+ BOM Master) rows matching a filter rule. The only data
+   saved per row is the small set of "extra" fields specific to that sheet
+   (e.g. PO dates, technician, MO number) — keyed by ERP Code.
+   ===================================================================== */
+const num = v => { const n = Number(v); return isNaN(n) ? 0 : n; };
+const stockFloor = p => num(p.onHandStock) + num(p.onHandInternalLocation);
+
+const DERIVED_SHEETS = {
+  gapAnalysis: {
+    label:'Gap Analysis', group:'Materials', order:3,
+    desc:'Automatic for every part in Part Master. Net Gap / Coverage / Status / Total Cost are calculated live. Fill in MO Issued, PO Ordered, Responsible, Target Date and Remarks here.',
+    statusField:'status',
+    filter: p => true,
+    columns:[
+      {key:'erpCode', label:'ERP Code', kind:'text', editable:false, w:100},
+      {key:'description', label:'Description', kind:'text', editable:false, w:190, wrap:true},
+      {key:'partNo', label:'Part No.', kind:'text', editable:false, w:125},
+      {key:'level', label:'Lvl', kind:'text', editable:false, w:50},
+      {key:'makebuy', label:'Make/Buy', kind:'text', editable:false, w:75},
+      {key:'preferredSupplier', label:'Supplier', kind:'text', editable:false, w:115},
+      {key:'totalRequiredQuantity', label:'Req. Qty', kind:'text', editable:false, w:80},
+      {key:'uom', label:'UOM', kind:'text', editable:false, w:55},
+      {key:'onHandStock', label:'Stock (WH)', kind:'text', editable:false, w:90, colorClass:'col-stock'},
+      {key:'onHandInternalLocation', label:'On Floor', kind:'text', editable:false, w:75, colorClass:'col-floor'},
+      {key:'moIssuedQuantity', label:'MO Issued', kind:'number', editable:true, w:85},
+      {key:'poOrderQuantity', label:'PO Ordered', kind:'number', editable:true, w:90},
+      {key:'netGap', label:'Net Gap', kind:'computed', w:75},
+      {key:'coverage', label:'Coverage %', kind:'computed', w:85},
+      {key:'status', label:'Status', kind:'computed', w:115},
+      {key:'leadTimeDays', label:'Lead (d)', kind:'text', editable:false, w:70},
+      {key:'unitCost', label:'Unit Cost', kind:'text', editable:false, w:90},
+      {key:'totalCost', label:'Total Cost', kind:'computed', w:95},
+      {key:'responsible', label:'Responsible', kind:'select', editable:true, opts:{global:'people'}, w:115},
+      {key:'targetDate', label:'Target Date', kind:'date', editable:true, w:110},
+      {key:'remarks', label:'Remarks', kind:'text', editable:true, w:170, wrap:true},
+    ]
+  },
+  internalRequests: {
+    label:'Internal Requests', group:'Materials', order:5,
+    desc:'Automatic for parts that have warehouse stock but still need to be requested to the shop floor.',
+    statusField:'status',
+    filter: p => num(p.onHandStock) > 0 && num(p.onHandInternalLocation) < num(p.totalRequiredQuantity),
+    columns:[
+      {key:'erpCode', label:'ERP Code', kind:'text', editable:false, w:100},
+      {key:'description', label:'Description', kind:'text', editable:false, w:190, wrap:true},
+      {key:'partNo', label:'Part No.', kind:'text', editable:false, w:125},
+      {key:'makebuy', label:'Make/Buy', kind:'text', editable:false, w:75},
+      {key:'requstedQty', label:'Req. Qty', kind:'computed', w:75},
+      {key:'uom', label:'UOM', kind:'text', editable:false, w:55},
+      {key:'totalRequiredQuantity', label:'Total Req.', kind:'text', editable:false, w:80},
+      {key:'onHandStock', label:'Stock (WH)', kind:'text', editable:false, w:90, colorClass:'col-stock'},
+      {key:'onHandInternalLocation', label:'On Floor', kind:'text', editable:false, w:75, colorClass:'col-floor'},
+      {key:'qtyReceived', label:'Qty Received', kind:'number', editable:true, w:90},
+      {key:'requestNumber', label:'Request #', kind:'text', editable:true, w:95},
+      {key:'requestDate', label:'Request Date', kind:'date', editable:true, w:110},
+      {key:'receiptDate', label:'Receipt Date', kind:'date', editable:true, w:110},
+      {key:'delayDays', label:'Delay (d)', kind:'computed', w:75},
+      {key:'status', label:'Status', kind:'select', editable:true, opts:STATUS_OPTS.poStatus, w:100},
+      {key:'delayReason', label:'Delay Reason', kind:'text', editable:true, w:140, wrap:true},
+      {key:'actionOwner', label:'Owner', kind:'select', editable:true, opts:{global:'people'}, w:105},
+      {key:'notes', label:'Notes', kind:'text', editable:true, w:160, wrap:true},
+    ]
+  },
+  purchasingTracker: {
+    label:'Purchasing Tracker', group:'Materials', order:6,
+    desc:'Automatic for Buy items short (partially or fully) of the required quantity and not manufactured internally.',
+    statusField:'status',
+    filter: p => p.makebuy === 'Buy' && stockFloor(p) < num(p.totalRequiredQuantity),
+    columns:[
+      {key:'erpCode', label:'ERP Code', kind:'text', editable:false, w:100},
+      {key:'description', label:'Description', kind:'text', editable:false, w:190, wrap:true},
+      {key:'partNo', label:'Part No.', kind:'text', editable:false, w:115},
+      {key:'makebuy', label:'Make/Buy', kind:'text', editable:false, w:70},
+      {key:'qtyToOrder', label:'Qty to Order', kind:'computed', w:90},
+      {key:'uom', label:'UOM', kind:'text', editable:false, w:55},
+      {key:'totalRequiredQuantity', label:'Total Req.', kind:'text', editable:false, w:80},
+      {key:'onHandStock', label:'Stock (WH)', kind:'text', editable:false, w:85, colorClass:'col-stock'},
+      {key:'qtyReceived', label:'Qty Received', kind:'number', editable:true, w:90},
+      {key:'preferredSupplier', label:'Supplier', kind:'text', editable:false, w:115},
+      {key:'leadTimeDays', label:'Lead (d)', kind:'text', editable:false, w:70},
+      {key:'prNumber', label:'PR Number', kind:'text', editable:true, w:95},
+      {key:'poNumberOptional', label:'PO Number', kind:'text', editable:true, w:95},
+      {key:'prDate', label:'PR Date', kind:'date', editable:true, w:100},
+      {key:'promisedDate', label:'Promised Date', kind:'date', editable:true, w:110},
+      {key:'actualReceiptDate', label:'Actual Receipt', kind:'date', editable:true, w:110},
+      {key:'delayDays', label:'Delay (d)', kind:'computed', w:75},
+      {key:'status', label:'Status', kind:'select', editable:true, opts:STATUS_OPTS.poStatus, w:100},
+      {key:'delayReason', label:'Delay Reason', kind:'text', editable:true, w:140, wrap:true},
+      {key:'actionOwner', label:'Owner', kind:'select', editable:true, opts:{global:'people'}, w:105},
+      {key:'notes', label:'Notes', kind:'text', editable:true, w:160, wrap:true},
+    ]
+  },
+  productionSchedule: {
+    label:'Production Schedule', group:'Manufacturing', order:7, reorderable:true,
+    desc:'Automatic for Make items short (partially or fully) of the required quantity — excluding assembly items, which live only in Assembly Control. Material ERP/Description/Qty and Readiness auto-detect from the row directly below this part in BOM Master. Drag ⠿ to arrange the build order.',
+    statusField:'status',
+    filter: p => p.makebuy === 'Make' && p.preferedMethodOfManufacturing !== 'Assembling' && stockFloor(p) < num(p.totalRequiredQuantity),
+    columns:[
+      {key:'imageBase64', label:'Photo', kind:'image', editable:false, w:60},
+      {key:'erpCode', label:'ERP Code', kind:'text', editable:false, w:95},
+      {key:'description', label:'Description', kind:'text', editable:false, w:165, wrap:true},
+      {key:'partNo', label:'Part No.', kind:'text', editable:false, w:115},
+      {key:'preferedMethodOfManufacturing', label:'Method', kind:'text', editable:false, w:95},
+      {key:'totalRequiredQuantity', label:'Req. Qty', kind:'text', editable:false, w:75},
+      {key:'uom', label:'UOM', kind:'text', editable:false, w:55},
+      {key:'prodOrderNo', label:'Order Qty', kind:'number', editable:true, w:85},
+      {key:'producedQuantity', label:'Produced', kind:'number', editable:true, w:80},
+      {key:'leadTimeEaDays', label:'Lead/EA (d)', kind:'text', editable:false, w:85},
+      {key:'totalLeadTimeHours', label:'Total Lead (h)', kind:'computed', w:95},
+      {key:'workCenter', label:'Work Center', kind:'select', editable:true, opts:{global:'workCenters'}, w:100},
+      {key:'materialErpCode', label:'Material ERP', kind:'text', editable:false, w:95},
+      {key:'materialDescription', label:'Material Desc', kind:'text', editable:false, w:150, wrap:true},
+      {key:'materialQty', label:'Mat. Qty', kind:'text', editable:false, w:70},
+      {key:'materialUom', label:'Mat. UOM', kind:'text', editable:false, w:70},
+      {key:'materialReadiness', label:'Mat. Ready', kind:'computed', w:95},
+      {key:'startDatePlan', label:'Start (Plan)', kind:'date', editable:true, w:105},
+      {key:'endDatePlan', label:'End (Plan)', kind:'computed', w:105},
+      {key:'startDateActual', label:'Start (Actual)', kind:'date', editable:true, w:110},
+      {key:'endDateActual', label:'End (Actual)', kind:'date', editable:true, w:110},
+      {key:'varianceDays', label:'Variance', kind:'computed', w:85},
+      {key:'moNo', label:'MO No.', kind:'text', editable:true, w:100},
+      {key:'status', label:'Status', kind:'select', editable:true, opts:STATUS_OPTS.prodStatus, w:100},
+      {key:'priority', label:'Priority', kind:'select', editable:true, opts:STATUS_OPTS.priority, w:80},
+      {key:'moStatus', label:'MO Status', kind:'select', editable:true, opts:STATUS_OPTS.moStatus, w:90},
+      {key:'remarks', label:'Remarks', kind:'text', editable:true, w:160, wrap:true},
+    ]
+  },
+  assemblyControl: {
+    label:'Assembly Control', group:'Manufacturing', order:8,
+    desc:'Automatic for parts manufactured by assembly (Mfg Method = Assembling) that are short of the required quantity.',
+    statusField:'assemblyStatus',
+    filter: p => p.preferedMethodOfManufacturing === 'Assembling' && stockFloor(p) < num(p.totalRequiredQuantity),
+    columns:[
+      {key:'erpCode', label:'ERP Code', kind:'text', editable:false, w:100},
+      {key:'description', label:'Description', kind:'text', editable:false, w:190, wrap:true},
+      {key:'partNo', label:'Part No.', kind:'text', editable:false, w:125},
+      {key:'level', label:'Lvl', kind:'text', editable:false, w:50},
+      {key:'revNo', label:'Rev', kind:'text', editable:true, w:55},
+      {key:'assemblyJo', label:'Assembly JO', kind:'text', editable:true, w:100},
+      {key:'workInstructionRef', label:'Work Instr. Ref', kind:'text', editable:true, w:120},
+      {key:'materialReadiness', label:'Mat. Ready', kind:'select', editable:true, opts:STATUS_OPTS.readiness, w:95},
+      {key:'specialTools', label:'Special Tools', kind:'text', editable:true, w:115},
+      {key:'assignedTechnician', label:'Technician', kind:'select', editable:true, opts:{global:'people'}, w:125},
+      {key:'startDate', label:'Start Date', kind:'date', editable:true, w:100},
+      {key:'endDate', label:'End Date', kind:'date', editable:true, w:100},
+      {key:'qcCheckpoint', label:'QC Checkpoint', kind:'text', editable:true, w:135, wrap:true},
+      {key:'assemblyStatus', label:'Status', kind:'select', editable:true, opts:STATUS_OPTS.assemblyStatus, w:110},
+      {key:'serialbatchNo', label:'Serial/Batch', kind:'text', editable:true, w:105},
+      {key:'notes', label:'Notes', kind:'text', editable:true, w:170, wrap:true},
+    ]
+  },
+  externalOperations: {
+    label:'External Operations', group:'Manufacturing', order:4,
+    desc:'Automatic for every part flagged "Needs External Operations = Yes" in Part Master.',
+    statusField:'status',
+    filter: p => p.isThisItemNeedExternalOperations === 'Yes',
+    columns:[
+      {key:'erpCode', label:'ERP Code', kind:'text', editable:false, w:95},
+      {key:'description', label:'Description', kind:'text', editable:false, w:180, wrap:true},
+      {key:'partNo', label:'Part No.', kind:'text', editable:false, w:115},
+      {key:'eoNumber', label:'EO Number', kind:'text', editable:true, w:90},
+      {key:'joRef', label:'JO Ref', kind:'text', editable:true, w:85},
+      {key:'operation1', label:'Operation', kind:'text', editable:true, w:105},
+      {key:'vendor', label:'Vendor', kind:'select', editable:true, opts:{global:'suppliers'}, w:105},
+      {key:'qtySent', label:'Qty Sent', kind:'number', editable:true, w:75},
+      {key:'sendDate', label:'Send Date', kind:'date', editable:true, w:100},
+      {key:'promiseDate', label:'Promise Date', kind:'date', editable:true, w:105},
+      {key:'returnDate', label:'Return Date', kind:'date', editable:true, w:100},
+      {key:'qtyReturned', label:'Qty Returned', kind:'number', editable:true, w:90},
+      {key:'qcResult', label:'QC Result', kind:'select', editable:true, opts:STATUS_OPTS.qc, w:85},
+      {key:'status', label:'Status', kind:'select', editable:true, opts:STATUS_OPTS.eoStatus, w:95},
+      {key:'cost', label:'Cost', kind:'number', editable:true, w:80},
+      {key:'currency', label:'Ccy', kind:'text', editable:true, w:55},
+      {key:'notes', label:'Notes', kind:'text', editable:true, w:160, wrap:true},
+    ]
+  },
+};
+
+const SHEET_ORDER = [...Object.keys(MANUAL_SHEETS), ...Object.keys(DERIVED_SHEETS)]
+  .sort((a,b) => (ALL_SHEETS()[a].order||99) - (ALL_SHEETS()[b].order||99));
+function ALL_SHEETS(){ return {...MANUAL_SHEETS, ...DERIVED_SHEETS}; }
+const GROUPS = ['Master Data','Materials','Manufacturing','Planning','Quality'];
+function isManual(key){ return !!MANUAL_SHEETS[key]; }
+function sheetCfg(key){ return MANUAL_SHEETS[key] || DERIVED_SHEETS[key]; }
